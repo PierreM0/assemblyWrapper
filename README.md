@@ -22,14 +22,29 @@ table = [34, 35, 69, 361, 420]
 - While loops:
 ```
 a = 0;
+b = 9;
 while (a != b) {
     a = a + 1;
-}
+};
+
+>>> a == 9
 ```
+- If statements :
+```
+a = 0;
+b = 9;
+if (a != b) {
+    a = a + 1;
+};
+
+>>> a == 1
+```
+
 - Operators:
   - `+`
   - `*`
   - `!=`
+  - `==`
 
 ## ROADMAP: 
 - [ ] Testing it 

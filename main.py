@@ -46,10 +46,12 @@ class TokenType(int):
     ASSIGN = auto()
     IDENTIFIER = auto()
     INT = auto()
+    STRING = auto()
     PUTC = auto()
     NEQ = auto()
+    EQ = auto()
     WHILE = auto()
-    STRING = auto()
+    IF = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -121,7 +123,7 @@ class Lexer:
                 self.cursor_on_line = 1
 
     def __next__(self):
-        assert TokenType.TokenType_NUMBERS == 17
+        assert TokenType.TokenType_NUMBERS == 19
         if self.cursor >= len(self.program_string):
             raise StopIteration
         self.trim_left()
@@ -138,7 +140,6 @@ class Lexer:
                     if escape == 'n':
                         char = '\n'
                 literal += char
-                print(literal)
             self.chop_char()
             type_ = TokenType.STRING
             return Token(literal, type_, location)
@@ -149,6 +150,8 @@ class Lexer:
             type_ = TokenType.IDENTIFIER
             if literal == 'putc':
                 type_ = TokenType.PUTC
+            elif literal == 'if':
+                type_ = TokenType.IF
             elif literal == 'while':
                 type_ = TokenType.WHILE
             return Token(literal, type_, location)
@@ -167,8 +170,12 @@ class Lexer:
                 return Token(literal, type_, location)
             print(f"ERROR:{location} `!{self.chop_char()}` is not a valid symbol")
         elif self.program_string[self.cursor] == '=':
-            literal = self.chop_char()
-            type_ = TokenType.ASSIGN
+            if self.cursor + 1 < len(self.program_string) and self.program_string[self.cursor + 1] == '=':
+                literal = self.chop_char() + self.chop_char()
+                type_ = TokenType.EQ
+            else :
+                literal = self.chop_char()
+                type_ = TokenType.ASSIGN
             return Token(literal, type_, location)
         elif self.program_string[self.cursor] == '+':
             literal = self.chop_char()
@@ -243,7 +250,7 @@ class AST:
         return self.__str__()
 
     def generate(self, generator):
-        assert TokenType.TokenType_NUMBERS == 17
+        assert TokenType.TokenType_NUMBERS == 19
         if isinstance(self.token, ArrayNode):
             first_raw = generator.memory_depth
             print(f"; ARRAYNODE", file=generator.out_file)
@@ -275,6 +282,15 @@ class AST:
             print(f"; NEQ", file=generator.out_file)
             print(f"cmp rax, rbx", file=generator.out_file)
             print(f"setne al", file=generator.out_file)
+            print(f"movzx rax, al", file=generator.out_file)
+        elif self.token.type == TokenType.EQ:
+            self.left.generate(generator)
+            print(f"push rax", file=generator.out_file)
+            self.right.generate(generator)
+            print(f"pop rbx", file=generator.out_file)
+            print(f"; EQ", file=generator.out_file)
+            print(f"cmp rax, rbx", file=generator.out_file)
+            print(f"sete al", file=generator.out_file)
             print(f"movzx rax, al", file=generator.out_file)
         elif self.token.type == TokenType.MULT:
             self.left.generate(generator)
@@ -325,6 +341,21 @@ class AST:
                 ast.generate(generator)
             print(f"jmp .L{condition_label}", file=generator.out_file)
             print(f".L{end_label}:", file=generator.out_file)
+        elif self.token.type == TokenType.IF:
+            assert isinstance(self, IfNode)  # always true
+            condition_label = generator.label_count
+            generator.label_count += 1
+            end_label = generator.label_count
+            generator.label_count += 1
+            print(f"; IF", file=generator.out_file)
+            print(f".L{condition_label}:", file=generator.out_file)
+            self.condition.generate(generator)
+            print(f"cmp rax, 0", file=generator.out_file)
+            print(f"je .L{end_label}", file=generator.out_file)
+            for ast in self.body:
+                ast.generate(generator)
+            print(f".L{end_label}:", file=generator.out_file)
+
 
 
 class Parser:
@@ -343,9 +374,13 @@ class Parser:
         return result
 
     def parse_S(self) -> AST | None:
-        assert TokenType.TokenType_NUMBERS == 17
+        assert TokenType.TokenType_NUMBERS == 19
         left = self.parse_T()
         if self.current_token() == TokenType.ADD:
+            token = self.chop_token()
+            right = self.parse_S()
+            return AST(token, left, right)
+        elif self.current_token() == TokenType.EQ:
             token = self.chop_token()
             right = self.parse_S()
             return AST(token, left, right)
@@ -362,8 +397,6 @@ class Parser:
 
     def parse_T(self):
         left = self.parse_Q()
-        if left is None:
-            return
         if self.current_token() == TokenType.MULT:
             token = self.chop_token()
             right = self.parse_T()
@@ -412,6 +445,8 @@ class Parser:
                     exit(1)
             self.chop_token()
             return AST(token, None, None)
+        elif self.current_token() == TokenType.IF:
+            return self.parse_if()
         elif self.current_token() == TokenType.WHILE:
             return self.parse_while()
         elif self.current_token() == TokenType.PUTC:
@@ -419,7 +454,25 @@ class Parser:
             right = self.parse_S()
             return AST(token, None, right)
         elif self.current_token() == TokenType.SEMICOLON:
-            self.chop_token()
+            pass
+
+    def parse_if(self):
+        token = self.chop_token()
+        if self.chop_token().type != TokenType.OPEN_PAREN:
+            print(f"ERROR:{token.location}: if is not followed by a parenthesis.")
+            exit(1)
+        condition = self.parse_S()
+        if self.chop_token().type != TokenType.CLOSE_PAREN:
+            print(f"ERROR:{token.location}: the parenthesis is not closed.")
+            exit(1)
+        if self.chop_token().type != TokenType.OPEN_CURLY_BRACKET:
+            print(f"ERROR:{token.location}: if is not followed by a curly bracket.")
+            exit(1)
+        body = self.parse()
+        if self.chop_token().type != TokenType.CLOSE_CURLY_BRACKET:
+            print(f"ERROR:{token.location}: the curly bracket is not closed.")
+            exit(1)
+        return IfNode(token, None, None, condition, body)
 
     def parse_while(self):
         token = self.chop_token()
@@ -451,6 +504,12 @@ class Parser:
         self.cursor += 1
         return self.tokens[cursor]
 
+
+class IfNode(AST):
+    def __init__(self, token: Token, left: AST | None, right: AST | None, condition: AST, body: List[AST | None]):
+        super().__init__(token, left, right)
+        self.condition = condition
+        self.body = body
 
 class WhileNode(AST):
     def __init__(self, token: Token, left: AST | None, right: AST | None, condition: AST, body: List[AST | None]):

@@ -29,28 +29,22 @@ mov rax, 0
 ; ASSIGN
 mov [global_mem+120], rax
 .l2:
-; WHILE
+; IF
 .L0:
-; IDENTIFIER
-; IDENTIFIER
-mov rax, [global_mem+120]
-mov rbx, [global_mem+112]
-mov rax, [rbx+rax]
+; INT
+mov rax, 0
 push rax
 ; INT
 mov rax, 0
 pop rbx
-; NEQ
+; EQ
 cmp rax, rbx
-setne al
+sete al
 movzx rax, al
 cmp rax, 0
 je .L1
-; IDENTIFIER
-; IDENTIFIER
-mov rax, [global_mem+120]
-mov rbx, [global_mem+112]
-mov rax, [rbx+rax]
+; INT
+mov rax, 69
 ; PUTC
 mov [global_mem+128], rax
 lea rsi, [global_mem+128]
@@ -68,7 +62,6 @@ pop rbx
 add rax, rbx
 ; ASSIGN
 mov [global_mem+120], rax
-jmp .L0
 .L1:
 ; STOP
 mov rax, 60
