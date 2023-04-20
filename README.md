@@ -9,12 +9,19 @@ $ ./foo
 ```
 It will generate an assembly file: `foo.asm` and an object file: `foo.o`
 
+# Dependencies:
+- [fasm](flatassembler.net)
+- ld
+- python3.11
+
 ### Supported functionalities:
 - Variable: (integers and strings)
 ```
 foo = 34  
-bar = "35"
+bar = "35
 ```
+Characters ares integers:
+`foo = 'E' <=> foo = 69`.
 - Tables:
 ```
 table = [34, 35, 69, 361, 420]
@@ -39,6 +46,13 @@ if (a != b) {
 
 >>> a == 1
 ```
+- (Verry limited) Functions:
+```
+fun a(value) {
+  putc value 
+}
+```
+A function cannot return anything for the moment
 
 - Operators:
   - `+`
