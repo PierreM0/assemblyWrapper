@@ -1,3 +1,3 @@
 fun main() {
-    putc 69
+    putc;
 }
