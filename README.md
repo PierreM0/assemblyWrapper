@@ -61,7 +61,7 @@ A function cannot return anything for the moment
   - `==`
 
 ## ROADMAP: 
-- [x] Make it turing complete
 - [ ] Testing it 
+- [x] Make it turing complete
 - [ ] Make the code coherent
 - [ ] Make it fun to write
