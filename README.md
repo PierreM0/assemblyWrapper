@@ -4,8 +4,8 @@ Simple python wrapper for assembly.
 
 # How to use:
 ```console
-$ ./main.py foo.aw foo
-$ ./foo
+$ ./main.py examples/rule110.aw rule110
+$ ./rule110
 ```
 It will generate an assembly file: `foo.asm` and an object file: `foo.o`
 
@@ -61,7 +61,7 @@ A function cannot return anything for the moment
   - `==`
 
 ## ROADMAP: 
+- [x] Make it turing complete
 - [ ] Testing it 
 - [ ] Make the code coherent
-- [ ] Make it turing complete
 - [ ] Make it fun to write

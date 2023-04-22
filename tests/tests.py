@@ -14,17 +14,19 @@ def run_info(command: str, capture_output=False) -> None:
 def compile_file_and_get_stdout_from_execution(file: str) -> str:
     test_file_name = f"{file}.test"
     test_file_asm_name = f"{file}.test.asm"
-    result_cmp = subprocess.run(["../main.py", file, test_file_name], capture_output=True)
+    result_cmp = subprocess.run(["../main.py", file, test_file_name], capture_output=True, env={'NOINFO':'1', 'FASM_LOC':'/opt/fasm-1.73.30/fasm/fasm'})
     if result_cmp.returncode > 0:
-        string = result_cmp.stdout.decode()
+        string = result_cmp.stderr.decode() + '\n' + result_cmp.stdout.decode()
         string += "\n----------\n"
         string += f"{result_cmp.returncode}"
     else:
         result = subprocess.run([f"./{test_file_name}"], capture_output=True)
         string = result.stdout.decode() + "\n----------\n"
         string += f"{result.returncode}"
+    if os.path.exists(test_file_name):
         run_info(["rm", f"./{test_file_name}"])
-    run_info(["rm", f"./{test_file_asm_name}"])
+    if os.path.exists(test_file_asm_name):
+        run_info(["rm", f"./{test_file_asm_name}"])
     return string
     
 
@@ -47,14 +49,15 @@ def run_test_for_file(file:str):
 
 def record_test_for_file(file:str):
     res_file = f"{file}.res"
-    r = open(res_file, "w")
     file_as_string = compile_file_and_get_stdout_from_execution(file)
+    r = open(res_file, "w")
     r.write(file_as_string)
     r.close() 
 
 
 def run_test_on_dir(dir: str) -> None:
-    for file in os.listdir(file):
+    for file in os.listdir(dir):
+        file = f"{dir}/{file}"
         if os.path.isdir(file):
             run_test_on_dir(file)
         if file.endswith('.aw'):
@@ -70,7 +73,8 @@ def run_test_on(file: str) -> None:
         exit(1)
 
 def record_test_on_dir(dir: str) -> None:
-    for file in os.listdir('.'):
+    for file in os.listdir(dir):
+        file = f"{dir}/{file}"
         if os.path.isdir(file):
             record_test_on_dir(file)
         if file.endswith('.aw'):
@@ -96,8 +100,7 @@ def main():
         record_test_on(sys.argv[2])
     if sys.argv[1] == "-run":
         run_test_on(sys.argv[2])
-    
-    print(f"Test failed: {test_failed}")
+        print(f"Test failed: {test_failed}")
 
 if __name__ == '__main__':
     main()
