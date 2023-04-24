@@ -1,86 +1,45 @@
-fun print_int(i) {
-    let var;
-    var = '0' + i;
-    putc var;
-}
-
-fun print_tab(tab, tab_size) {
-    let i;
-    i = 0;
-    while (i != tab_size) {
-        print_int(tab[i]);
-        i = i+1;
-    }
-    putc 10;
+fun print_stars_spaces(i) {
+    let tab;
+    tab = [' ', '*'];
+    putc (tab[i]);
 }
 
 fun main() {
-    let tab;
-    let tab_size;
-    let iterations;
+    const BOARD_CAP 100;
 
-    iterations = 19;
+    let board[BOARD_CAP];
 
-    tab = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1];
-    tab_size = 20;
+    board[BOARD_CAP -2] = 1;
 
-    let line;
-
-    line = 0;
-
-
-    print_tab(tab, tab_size);
-
-    while (line != iterations) {
-        let i;
-        i = 0;
-
-        let new_tab;
-        new_tab = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        while (i != 20) {
-            new_tab[i] = tab[i];
-            i = i + 1;
-        }
-
-        i = 0;
-        while (i != 19) {
-        if (tab[i-1] != 1) {
-            if (tab[i] != 1) {
-                if (tab[i+1] != 1) {
-                    new_tab[i] = 0;
-                }
-                if (tab[i+1] == 1) {
-                    new_tab[i] = 1;
-                }
-            }
-            if (tab[i] == 1) {
-                if (tab[i+1] != 1) {
-                }
-                if (tab[i+1] == 1) {
-                    new_tab[i] = 1;
-                }
-            }
-        }
-        if (tab[i-1] == 1) {
-            if (tab[i] != 1) {
-                if (tab[i+1] != 1) new_tab[i] = 0;
-                if (tab[i+1] == 1) new_tab[i] = 1;
-            }
-            if (tab[i] == 1) {
-                if (tab[i+1] != 1) new_tab[i] = 1;
-                if (tab[i+1] == 1) new_tab[i] = 0;
-            }
-        }
+    let i; i=0;
+    while ( i != BOARD_CAP-3) {
+        board[i] = 0;
         i = i + 1;
-        }
-        print_tab(new_tab, tab_size);
+    }
+    i = 0;
 
-        i = 0;
-        while (i != 20) {
-            tab[i] = new_tab[i];
-            i = i + 1;
+    while (i != BOARD_CAP -2) {
+        let j; j = 0;
+        while (j != BOARD_CAP) {
+
+            print_stars_spaces(board[j]);
+            j = j + 1;
         }
 
-        line = line + 1;
+        putc 10;
+
+        let pattern;
+        pattern = (board[0] << 1) | board[1];
+        j=1;
+        while (j != (BOARD_CAP-1)) {
+            pattern = ((pattern << 1) & 7) | board[j+1];
+            board[j] = (110 >> pattern) & 1 ;
+
+            j = j + 1;
+
+
+        }
+
+        i = i + 1;
     }
 }

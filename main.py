@@ -77,6 +77,11 @@ class TokenType(int):
     WHILE = auto()
     IF = auto()
     LET = auto()
+    CONST = auto()
+    LEFT_SHIFT = auto()
+    RIGHT_SHIFT = auto()
+    BIT_AND = auto()
+    BIT_OR = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -148,7 +153,7 @@ class Lexer:
                 self.cursor_on_line = 1
 
     def __next__(self):
-        assert TokenType.TokenType_NUMBERS == 22
+        assert TokenType.TokenType_NUMBERS == 27
         if self.cursor >= len(self.program_string):
             raise StopIteration
         self.trim_left()
@@ -189,6 +194,8 @@ class Lexer:
                 type_ = TokenType.FUNCTION
             elif literal == 'let':
                 type_ = TokenType.LET
+            elif literal == 'const':
+                type_ = TokenType.CONST
             return Token(literal, type_, location)
         elif self.program_string[self.cursor].isnumeric():
             while self.program_string[self.cursor].isalnum() or self.program_string[self.cursor] == '_':
@@ -208,7 +215,7 @@ class Lexer:
             if self.cursor + 1 < len(self.program_string) and self.program_string[self.cursor + 1] == '=':
                 literal = self.chop_char() + self.chop_char()
                 type_ = TokenType.EQ
-            else :
+            else:
                 literal = self.chop_char()
                 type_ = TokenType.ASSIGN
             return Token(literal, type_, location)
@@ -220,6 +227,26 @@ class Lexer:
             literal = self.chop_char()
             type_ = TokenType.ADD
             return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '|':
+            literal = self.chop_char()
+            type_ = TokenType.BIT_OR
+            return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '&':
+            literal = self.chop_char()
+            type_ = TokenType.BIT_AND
+            return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '<':
+            if self.program_string[self.cursor + 1] == '<':
+                literal = self.chop_char()
+                self.chop_char()
+                type_ = TokenType.LEFT_SHIFT
+                return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '>':
+            if self.program_string[self.cursor + 1] == '>':
+                literal = self.chop_char()
+                self.chop_char()
+                type_ = TokenType.RIGHT_SHIFT
+                return Token(literal, type_, location)
         elif self.program_string[self.cursor] == ';':
             literal = self.chop_char()
             type_ = TokenType.SEMICOLON
@@ -266,7 +293,7 @@ class AST():
         self.token = token
 
     def to_dict(self):
-       pass
+        pass
 
     def __str__(self):
         return json.dumps(self.to_dict(), indent=4)
@@ -276,8 +303,6 @@ class AST():
 
     def generate(self, generator, out_file):
         assert TokenType.TokenType_NUMBERS == 21
-
-
 
 
 class BinaryOperator(AST):
@@ -302,8 +327,44 @@ class BinaryOperator(AST):
         )
 
     def generate(self, generator, out_file):
-        assert TokenType.TokenType_NUMBERS == 22
-        if self.token.type == TokenType.MINUS:
+        assert TokenType.TokenType_NUMBERS == 27
+        if self.token.type == TokenType.LEFT_SHIFT:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"; SHL", file=out_file)
+            print(f"mov rcx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+            print(f"shl rax, cl", file=out_file)
+        elif self.token.type == TokenType.RIGHT_SHIFT:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"; SRL", file=out_file)
+            print(f"mov rcx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+            print(f"shr rax, cl", file=out_file)
+        elif self.token.type == TokenType.BIT_OR:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"; B OR", file=out_file)
+            print(f"or rbx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+        elif self.token.type == TokenType.BIT_AND:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"; B AND", file=out_file)
+            print(f"and rbx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+
+
+        elif self.token.type == TokenType.MINUS:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
             self.right.generate(generator, out_file)
@@ -324,18 +385,22 @@ class BinaryOperator(AST):
             self.right.generate(generator, out_file)
             print(f"pop rbx", file=out_file)
             print(f"; NEQ", file=out_file)
+            print(f"mov rcx, 0", file=out_file)
+            print(f"mov rdx, 1", file=out_file)
             print(f"cmp rax, rbx", file=out_file)
-            print(f"setne al", file=out_file)
-            print(f"movzx rax, al", file=out_file)
+            print(f"cmovne rcx, rdx", file=out_file)
+            print(f"mov rax, rcx", file=out_file)
         elif self.token.type == TokenType.EQ:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
             self.right.generate(generator, out_file)
             print(f"pop rbx", file=out_file)
             print(f"; EQ", file=out_file)
+            print(f"mov rcx, 0", file=out_file)
+            print(f"mov rdx, 1", file=out_file)
             print(f"cmp rax, rbx", file=out_file)
-            print(f"sete al", file=out_file)
-            print(f"movzx rax, al", file=out_file)
+            print(f"cmove rcx, rbx", file=out_file)
+            print(f"mov rax, rcx", file=out_file)
         elif self.token.type == TokenType.MULT:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
@@ -343,7 +408,6 @@ class BinaryOperator(AST):
             print(f"pop rbx", file=out_file)
             print(f"; MULT", file=out_file)
             print(f"mul rbx", file=out_file)
-
 
 
 class IfNode(AST):
@@ -374,6 +438,7 @@ class WhileNode(AST):
         super().__init__(token)
         self.condition = condition
         self.body = body
+
     def to_dict(self):
         return dict(condition=self.condition.to_dict(), body=self.body.to_dict())
 
@@ -399,6 +464,7 @@ class FunctionNode(AST):
         self.name = name
         self.arguments = arguments
         self.body = body
+
     def to_dict(self):
         return dict(name=self.name.literal,
                     arguments=[a.to_dict() for a in self.arguments], body=self.body.to_dict())
@@ -428,7 +494,7 @@ class FunctionNode(AST):
         for arg in self.arguments:
             identifier = arg.literal
 
-            new_gen.variables[identifier] =f"[mem+{new_gen.memory_depth}]"
+            new_gen.variables[identifier] = f"[mem+{new_gen.memory_depth}]"
             print(f"mov r10, qword [fstack+{function_stack}]", file=out_file)
             print(f"mov qword {new_gen.variables[identifier]}, r10", file=out_file)
 
@@ -439,7 +505,7 @@ class FunctionNode(AST):
         if function_name != 'main':
             print(f"ret", file=out_file)
         generator.label_count = new_gen.label_count
-        generator.memory_depth = new_gen.memory_depth # TODO optimize memory
+        generator.memory_depth = new_gen.memory_depth  # TODO optimize memory
 
 
 class FunctionCall(AST):
@@ -519,7 +585,7 @@ class PutcNode(AST):
         self.expression.generate(generator, out_file)
         print(f"; PUTC", file=out_file)
         mem_addr = f"[mem+{generator.memory_depth}]"
-        generator.memory_depth += 8 # TODO optimize memory
+        generator.memory_depth += 8  # TODO optimize memory
         print(f"mov qword {mem_addr}, rax", file=out_file)
         print(f"lea rsi, {mem_addr}", file=out_file)
         print("mov rdx, 8", file=out_file)
@@ -535,6 +601,7 @@ class VariableDeclarationNode(AST):
 
     def to_dict(self):
         return dict(variable=self.variable.to_dict())
+
     def generate(self, generator, out_file):
         generator.variables[self.variable.literal] = None
 
@@ -552,7 +619,6 @@ class IntNode(AST):
         print(f"mov rax, {self.token.literal}", file=out_file)
 
 
-
 class IdentifierNode(AST):
     def __init__(self, token: Token):
         super().__init__(token)
@@ -563,6 +629,9 @@ class IdentifierNode(AST):
 
     def generate(self, generator, out_file):
         identifier = self.token.literal
+        if self.token.literal in generator.constants:
+            print(f"mov rax, {generator.constants[self.token.literal]}", file=out_file)
+            return
         if identifier not in generator.variables and identifier not in generator.functions:
             print(f"{self.token.location}: ERROR: identifier `{identifier}` is not declared")
             exit(1)
@@ -594,6 +663,11 @@ class TableAccessNode(AST):
             var_index = generator.variables[identifier][len("[mem+"):-len("]")]
             mem = "mem+"
             var = mem + var_index
+            print(f"mov r10, qword [{var}]", file=out_file)
+        elif generator.variables[identifier].startswith("[table_"):
+            mem = generator.variables[identifier]
+            var = mem.removeprefix('[').removesuffix(']')
+            print(f"lea r10, qword [{var}]", file=out_file)
         elif generator.variables[identifier].startswith("[fstack+"):
             print("COMPILER ERROR, FSTACK IS BEING USED ")
         else:
@@ -601,12 +675,46 @@ class TableAccessNode(AST):
             exit(1)
         sizeof_var = 8  # TODO  sizeof VAR at compile time (when adding struct ?)
         # rax is the index
-        print(f"mov r10, qword [{var}]", file=out_file)
-        print(f"mov rcx, {sizeof_var}",file=out_file)
+        print(f"mov rcx, {sizeof_var}", file=out_file)
         print("mul rcx", file=out_file)
         print("add rax, r10", file=out_file)
-        print(f"mov rbx, rax",file=out_file)
+        print(f"mov rbx, rax", file=out_file)
         print(f"mov rax, qword [rbx]", file=out_file)
+
+
+class TableDeclarationNode(AST):
+    def __init__(self, token: Token, variable: Token, length: Token):
+        super().__init__(token)
+        self.variable = variable
+        self.length = length
+
+    def to_dict(self):
+        return dict(variable=self.variable.to_dict(), length=self.length.to_dict())
+
+    def generate(self, generator, out_file):
+        if self.length.type != TokenType.INT and self.length.literal not in generator.constants:
+            print(f"{self.length.location}: ERROR: The length of the table is not a integer.")
+            exit(1)
+        if self.length.literal in generator.constants:
+            self.length.literal = generator.constants[self.length.literal]
+        generator.table_list.append((self.variable.literal, self.length.literal))
+        generator.variables[self.variable.literal] = f"[table_{len(generator.table_list)-1}]"
+
+
+class ConstDeclarationNode(AST):
+    def __init__(self, token: Token, identifier: Token, value: Token):
+        super().__init__(token)
+        self.identifier = identifier
+        self.value = value
+
+    def to_dict(self):
+        return dict(identifier=self.identifier.literal, value=self.value.literal)
+
+    def generate(self, generator, out_file):
+        if self.value.type != TokenType.INT:
+            print(f"{self.value.location}: ERROR: the only constant value supported yet are integers.")
+            exit(1)
+        generator.constants[self.identifier.literal] = self.value.literal
 
 
 class Parser:
@@ -633,11 +741,11 @@ class Parser:
         if self.current_token() == TokenType.OPEN_CURLY_BRACKET:
             return self.parse_block()
         if self.current_token() == TokenType.IDENTIFIER:
-            if self.tokens[self.cursor+1].type == TokenType.OPEN_BRACKET:
+            if self.tokens[self.cursor + 1].type == TokenType.OPEN_BRACKET:
                 return self.parse_table_access_for_assigment()
-            if self.tokens[self.cursor+1].type == TokenType.ASSIGN:
+            if self.tokens[self.cursor + 1].type == TokenType.ASSIGN:
                 return self.parse_assign()
-            if self.tokens[self.cursor+1].type == TokenType.OPEN_PAREN:
+            if self.tokens[self.cursor + 1].type == TokenType.OPEN_PAREN:
                 return self.parse_function_call()
         if self.current_token() == TokenType.FUNCTION:
             return self.parse_function()
@@ -645,19 +753,31 @@ class Parser:
             return self.parse_putc()
         if self.current_token() == TokenType.LET:
             return self.parse_var_declaration()
-
+        if self.current_token() == TokenType.CONST:
+            return self.parse_const_declaration()
 
     def parse_expr(self) -> AST:
-        assert TokenType.TokenType_NUMBERS == 22
+        assert TokenType.TokenType_NUMBERS == 27
         left = self.parse_T()
         if self.current_token() == TokenType.MINUS:
             token = self.chop_token()
             right = self.parse_expr()
             return BinaryOperator(token, left, right)
-        if self.current_token() == TokenType.ADD:
+        elif self.current_token() == TokenType.ADD:
             token = self.chop_token()
             right = self.parse_expr()
             return BinaryOperator(token, left, right)
+
+        elif self.current_token() == TokenType.LEFT_SHIFT:
+            token = self.chop_token()
+            right = self.parse_expr()
+            return BinaryOperator(token, left, right)
+        elif self.current_token() == TokenType.RIGHT_SHIFT:
+            token = self.chop_token()
+            right = self.parse_expr()
+            return BinaryOperator(token, left, right)
+
+
         elif self.current_token() == TokenType.EQ:
             token = self.chop_token()
             right = self.parse_expr()
@@ -666,6 +786,16 @@ class Parser:
             token = self.chop_token()
             right = self.parse_expr()
             return BinaryOperator(token, left, right)
+
+        elif self.current_token() == TokenType.BIT_AND:
+            token = self.chop_token()
+            right = self.parse_expr()
+            return BinaryOperator(token, left, right)
+        elif self.current_token() == TokenType.BIT_OR:
+            token = self.chop_token()
+            right = self.parse_expr()
+            return BinaryOperator(token, left, right)
+
         else:
             return left
 
@@ -689,7 +819,7 @@ class Parser:
             chopped_token = self.chop_token()
             node = ArrayNode(chopped_token, list())
             for c in chopped_token.literal:
-                node.add(Token(str(ord(c)), TokenType.STRING, chopped_token.location)) # TODO location here
+                node.add(Token(str(ord(c)), TokenType.STRING, chopped_token.location))  # TODO location here
             node.add(Token("0", TokenType.INT, chopped_token.location))  # cString TODO location here
             return node
         elif self.current_token() == TokenType.INT:
@@ -704,7 +834,7 @@ class Parser:
             else:
                 return IdentifierNode(self.chop_token())
         elif self.current_token() == TokenType.OPEN_BRACKET:
-            chopped_token = self.chop_token()   #  [
+            chopped_token = self.chop_token()  # [
             node = ArrayNode(chopped_token, list())
             close_bracket = self.current_token() == TokenType.CLOSE_BRACKET
             while not close_bracket:
@@ -770,7 +900,7 @@ class Parser:
                 exit(1)
             match self.current_token():
                 case TokenType.COMMA:
-                   self.chop_token()
+                    self.chop_token()
                 case TokenType.CLOSE_PAREN:
                     close_paren = True
                 case _:
@@ -815,25 +945,25 @@ class Parser:
         expression = self.parse_expr()
         ct = self.chop_token()
         if ct.type != TokenType.SEMICOLON:
-           print(f"{ct.location}:ERROR: missing `;`")
-           exit(1)
+            print(f"{ct.location}:ERROR: missing `;`")
+            exit(1)
         return AssignNode(token, variable, expression)
 
     def parse_putc(self) -> AST:
-       token = self.chop_token()
-       expression = self.parse_expr()
-       ct = self.chop_token()
-       if ct.type != TokenType.SEMICOLON:
-           print(f"{ct.location}:ERROR: missing `;`")
-           exit(1)
-       return PutcNode(token, expression)
+        token = self.chop_token()
+        expression = self.parse_expr()
+        ct = self.chop_token()
+        if ct.type != TokenType.SEMICOLON:
+            print(f"{ct.location}:ERROR: missing `;`")
+            exit(1)
+        return PutcNode(token, expression)
 
     def parse_function_call(self) -> AST:
         token = self.chop_token()
         self.chop_token()  # token (
         fun_call = FunctionCall(token, list())
         close_paren = self.current_token() == TokenType.CLOSE_PAREN
-        while not close_paren: # ( 1, 3, 4, 5);
+        while not close_paren:  # ( 1, 3, 4, 5);
             fun_call.arguments.append(self.parse_expr())
             match self.current_token():
                 case TokenType.COMMA:
@@ -843,25 +973,37 @@ class Parser:
                 case _:
                     print(f"{self.chop_token().location}: ERROR: no comma after value in function call")
                     exit(1)
-        self.chop_token() # I don't know why, and i don't want to think about it
+        self.chop_token()  # I don't know why, and i don't want to think about it
         ct = self.chop_token()
         if ct.type != TokenType.SEMICOLON:
             print(f"{ct.location}: ERROR: missing semicolon")
+            exit(1)
         return fun_call
 
     def parse_var_declaration(self) -> AST:
         token = self.chop_token()
         variable = self.chop_token()
-        semicolon = self.chop_token()
-        if semicolon.type != TokenType.SEMICOLON:
-            print(f"{semicolon.location}: ERROR: missing semicolon")
-        return VariableDeclarationNode(token, variable)
+        if self.current_token() == TokenType.OPEN_BRACKET:
+            self.chop_token()
+            length = self.chop_token()
+            self.chop_token()
+            semicolon = self.chop_token()
+            if semicolon.type != TokenType.SEMICOLON:
+                print(f"{semicolon.location}: ERROR: missing semicolon")
+                exit(1)
+            return TableDeclarationNode(token, variable, length)
+        else:
+            semicolon = self.chop_token()
+            if semicolon.type != TokenType.SEMICOLON:
+                print(f"{semicolon.location}: ERROR: missing semicolon")
+                exit(1)
+            return VariableDeclarationNode(token, variable)
 
     def parse_table_access_for_assigment(self) -> AST:
         identifier = self.chop_token()
-        self.chop_token() # [
+        self.chop_token()  # [
         index = self.parse_expr()
-        self.chop_token() # ]
+        self.chop_token()  # ]
         tan = TableAccessNode(identifier, index)
         optoken = self.chop_token()
         if optoken.type == TokenType.ASSIGN:
@@ -872,14 +1014,21 @@ class Parser:
                 exit(1)
             return AssignNode(optoken, tan, expression)
 
-
-
-
-
+    def parse_const_declaration(self):
+        token = self.chop_token()
+        identifier = self.chop_token()
+        value = self.chop_token()
+        semicolon = self.chop_token()
+        if semicolon.type != TokenType.SEMICOLON:
+            print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
+            exit(1)
+        return ConstDeclarationNode(token, identifier, value)
 class Generator:
     def __init__(self, statements: List[AST], out_file_name="foo.asm"):
         self.out_file = None
+        self.constants: Dict[str, str] = dict()
         self.statements = statements
+        self.table_list: List[str] = list()
         self.variables: Dict[str, str] = dict()
         self.functions: Dict[str, str] = dict()
         self.out_file_name = out_file_name
@@ -905,11 +1054,13 @@ class Generator:
 
         print("segment readable writable", file=out_file)
 
+        for n, (_, length) in enumerate(self.table_list):
+            print(f"table_{n} db {length} * 8 dup(0)", file=out_file)
         for n, string in enumerate(strings):
             print(f"string_{n} dq ", end="", file=out_file)
             for i, token in enumerate(string):
                 char = token.literal
-                if i !=  0:
+                if i != 0:
                     print(",", end="", file=out_file)
                 print(f"{char}", end="", file=out_file)
             print(f"", file=out_file)
@@ -929,15 +1080,16 @@ class Generator:
         return gen
 
 
-
 class ArrayNode(AST):
     def __init__(self, token: Token, array: List[Token]):
         super().__init__(token)
         self.array = array
         self.size = 0
+
     def add(self, item):
         self.array.append(item)
         self.size += 1
+
     def generate(self, generator, out_file):
         global strings
         global string_length
@@ -989,13 +1141,13 @@ def main() -> None:
     for token in lexer:
         tokens.append(token)
     end = time.time()
-    print_info(f"tokenizing took {end-begin} seconds")
+    print_info(f"tokenizing took {end - begin} seconds")
 
     begin = time.time()
     parser = Parser(tokens)
     statements = parser.parse()
     end = time.time()
-    print_info(f"parsing took {end-begin} seconds")
+    print_info(f"parsing took {end - begin} seconds")
 
     #  print(statements)
 
@@ -1004,8 +1156,7 @@ def main() -> None:
     generator = Generator(statements, asm_file)
     generator.generate()
     end = time.time()
-    print_info(f"generation took {end-begin} seconds")
-
+    print_info(f"generation took {end - begin} seconds")
 
     fasm_run = subprocess.run([fasm_loc, asm_file])
     if fasm_run.returncode > 0:
