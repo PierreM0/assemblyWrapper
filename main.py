@@ -66,6 +66,8 @@ class TokenType(int):
     OPEN_PAREN = auto()
     CLOSE_PAREN = auto()
     MULT = auto()
+    DIV = auto()
+    MOD = auto()
     SEMICOLON = auto()
     ADD = auto()
     MINUS = auto()
@@ -86,7 +88,7 @@ class TokenType(int):
     RIGHT_SHIFT = auto()
     BIT_AND = auto()
     BIT_OR = auto()
-    COMMENTS = auto()
+    IMPORT = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -158,7 +160,10 @@ class Lexer:
                 self.cursor_on_line = 1
 
     def __next__(self):
-        assert TokenType.TokenType_NUMBERS == 29
+        global debug
+        assert TokenType.TokenType_NUMBERS == 30
+        if debug:
+            print(Location(self.line, self.cursor_on_line, self.input_file))
         if self.cursor >= len(self.program_string):
             raise StopIteration
         self.trim_left()
@@ -203,6 +208,8 @@ class Lexer:
                 type_ = TokenType.LET
             elif literal == 'const':
                 type_ = TokenType.CONST
+            elif literal == 'import':
+                type_ = TokenType.IMPORT
             return Token(literal, type_, location)
         elif self.program_string[self.cursor].isnumeric():
             while self.program_string[self.cursor].isalnum() or self.program_string[self.cursor] == '_':
@@ -233,6 +240,14 @@ class Lexer:
         elif self.program_string[self.cursor] == '+':
             literal = self.chop_char()
             type_ = TokenType.ADD
+            return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '/':
+            literal = self.chop_char()
+            type_ = TokenType.DIV
+            return Token(literal, type_, location)
+        elif self.program_string[self.cursor] == '%':
+            literal = self.chop_char()
+            type_ = TokenType.MOD
             return Token(literal, type_, location)
         elif self.program_string[self.cursor] == '|':
             literal = self.chop_char()
@@ -334,7 +349,7 @@ class BinaryOperator(AST):
         )
 
     def generate(self, generator, out_file):
-        assert TokenType.TokenType_NUMBERS == 28
+        assert TokenType.TokenType_NUMBERS == 30
         if self.token.type == TokenType.LEFT_SHIFT:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
@@ -415,6 +430,31 @@ class BinaryOperator(AST):
             print(f"pop rbx", file=out_file)
             print(f"; MULT", file=out_file)
             print(f"mul rbx", file=out_file)
+        elif self.token.type == TokenType.DIV:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"xor rdx, rdx", file=out_file)
+            print(f"mov rcx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+            print(f"mov rbx, rcx", file=out_file)
+            print(f"div rbx", file=out_file)
+                
+        elif self.token.type == TokenType.MOD:
+            self.left.generate(generator, out_file)
+            print(f"push rax", file=out_file)
+            self.right.generate(generator, out_file)
+            print(f"pop rbx", file=out_file)
+            print(f"xor rdx, rdx", file=out_file)
+            print(f"mov rcx, rax", file=out_file)
+            print(f"mov rax, rbx", file=out_file)
+            print(f"mov rbx, rcx", file=out_file)
+            print(f"div rbx", file=out_file)
+            print(f"mov rax, rdx", file=out_file)
+
+
+
 
 
 class IfNode(AST):
@@ -494,6 +534,7 @@ class FunctionNode(AST):
             new_gen.memory_depth = generator.memory_depth
             new_gen.functions = generator.functions
             new_gen.label_count = generator.label_count
+            new_gen.table_list = generator.table_list
 
         print(f"{asm_func_name}:", file=out_file)
 
@@ -513,6 +554,7 @@ class FunctionNode(AST):
             print(f"ret", file=out_file)
         generator.label_count = new_gen.label_count
         generator.memory_depth = new_gen.memory_depth  # TODO optimize memory
+        generator.table_list = new_gen.table_list # TODO optimize memory
 
 
 class FunctionCall(AST):
@@ -709,7 +751,7 @@ class TableDeclarationNode(AST):
         super().__init__(token)
         self.variable = variable
         self.length = length
-
+    
     def to_dict(self):
         return dict(variable=self.variable.to_dict(), length=self.length.to_dict())
 
@@ -751,6 +793,19 @@ class VariableDeclarationAndAssignNode(AST):
         generator.variables[self.identifier.literal] = f"[mem+{generator.memory_depth}]"
         generator.memory_depth += 8
         self.assign_node.generate(generator, out_file) 
+
+class ImportNode(AST):
+    def __init__(self, token:Token, file: Token, statements: List[AST]):
+        super().__init__(token)
+        self.file = file
+        self.statements = statements
+
+    def to_dict(self):
+        return dict(file=file.to_dict(), statements=[s.to_dict() for s in statements])
+
+    def generate(self, generator, out_file):
+        for stmt in self.statements:
+            stmt.generate(generator, out_file)
 
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -794,7 +849,8 @@ class Parser:
             return self.parse_var_declaration()
         if self.current_token() == TokenType.CONST:
             return self.parse_const_declaration()
-
+        if self.current_token() == TokenType.IMPORT:
+            return self.parse_import()
     def parse_expr(self) -> AST:
         assert TokenType.TokenType_NUMBERS == 28
         left = self.parse_T()
@@ -841,6 +897,14 @@ class Parser:
     def parse_T(self) -> AST:
         left = self.parse_Q()
         if self.current_token() == TokenType.MULT:
+            token = self.chop_token()
+            right = self.parse_T()
+            return BinaryOperator(token, left, right)
+        if self.current_token() == TokenType.DIV:
+            token = self.chop_token()
+            right = self.parse_T()
+            return BinaryOperator(token, left, right)
+        if self.current_token() == TokenType.MOD:
             token = self.chop_token()
             right = self.parse_T()
             return BinaryOperator(token, left, right)
@@ -1072,6 +1136,37 @@ class Parser:
             print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
             exit(1)
         return ConstDeclarationNode(token, identifier, value)
+    
+    def parse_import(self):
+        import_token = self.chop_token()
+        file = self.chop_token()
+        file_to_import = file.literal
+        
+        with open(file_to_import, "r") as f:
+            file_as_string = f.read()
+
+        lexer = Lexer(file_to_import, file_as_string)
+
+        if not os.path.exists(file_to_import):
+            print(f"ERROR: {file_to_import} does not exists")
+
+        tokens = list()
+        for token in lexer:
+            tokens.append(token)
+        print("lexed")
+
+        parser = Parser(tokens)
+        statements = parser.parse()
+        print("parsed")
+
+        semicolon = self.chop_token()
+        if semicolon.type != TokenType.SEMICOLON:
+            print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
+            exit(1)
+
+        return ImportNode(token, file, statements)
+
+
 class Generator:
     def __init__(self, statements: List[AST], out_file_name="foo.asm"):
         self.out_file = None
