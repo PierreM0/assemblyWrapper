@@ -66,8 +66,6 @@ class TokenType(int):
     OPEN_PAREN = auto()
     CLOSE_PAREN = auto()
     MULT = auto()
-    DIV = auto()
-    MOD = auto()
     SEMICOLON = auto()
     ADD = auto()
     MINUS = auto()
@@ -81,15 +79,12 @@ class TokenType(int):
     EQ = auto()
     WHILE = auto()
     IF = auto()
-    RETURN = auto()
     LET = auto()
     CONST = auto()
     LEFT_SHIFT = auto()
     RIGHT_SHIFT = auto()
     BIT_AND = auto()
     BIT_OR = auto()
-    IMPORT = auto()
-    COMMENTS = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -201,16 +196,12 @@ class Lexer:
                 type_ = TokenType.IF
             elif literal == 'while':
                 type_ = TokenType.WHILE
-            elif literal == 'return':
-                type_ = TokenType.RETURN
             elif literal == 'fun':
                 type_ = TokenType.FUNCTION
             elif literal == 'let':
                 type_ = TokenType.LET
             elif literal == 'const':
                 type_ = TokenType.CONST
-            elif literal == 'import':
-                type_ = TokenType.IMPORT
             return Token(literal, type_, location)
         elif self.program_string[self.cursor].isnumeric():
             while self.program_string[self.cursor].isalnum() or self.program_string[self.cursor] == '_':
@@ -241,14 +232,6 @@ class Lexer:
         elif self.program_string[self.cursor] == '+':
             literal = self.chop_char()
             type_ = TokenType.ADD
-            return Token(literal, type_, location)
-        elif self.program_string[self.cursor] == '/':
-            literal = self.chop_char()
-            type_ = TokenType.DIV
-            return Token(literal, type_, location)
-        elif self.program_string[self.cursor] == '%':
-            literal = self.chop_char()
-            type_ = TokenType.MOD
             return Token(literal, type_, location)
         elif self.program_string[self.cursor] == '|':
             literal = self.chop_char()
@@ -324,9 +307,9 @@ class AST():
     def __repr__(self):
         return self.__str__()
 
-    @abstractmethod
     def generate(self, generator, out_file):
-        pass
+        assert TokenType.TokenType_NUMBERS == 21
+
 
 class BinaryOperator(AST):
     def __init__(self, token: Token, left: AST, right: AST):
@@ -431,31 +414,6 @@ class BinaryOperator(AST):
             print(f"pop rbx", file=out_file)
             print(f"; MULT", file=out_file)
             print(f"mul rbx", file=out_file)
-        elif self.token.type == TokenType.DIV:
-            self.left.generate(generator, out_file)
-            print(f"push rax", file=out_file)
-            self.right.generate(generator, out_file)
-            print(f"pop rbx", file=out_file)
-            print(f"xor rdx, rdx", file=out_file)
-            print(f"mov rcx, rax", file=out_file)
-            print(f"mov rax, rbx", file=out_file)
-            print(f"mov rbx, rcx", file=out_file)
-            print(f"div rbx", file=out_file)
-
-        elif self.token.type == TokenType.MOD:
-            self.left.generate(generator, out_file)
-            print(f"push rax", file=out_file)
-            self.right.generate(generator, out_file)
-            print(f"pop rbx", file=out_file)
-            print(f"xor rdx, rdx", file=out_file)
-            print(f"mov rcx, rax", file=out_file)
-            print(f"mov rax, rbx", file=out_file)
-            print(f"mov rbx, rcx", file=out_file)
-            print(f"div rbx", file=out_file)
-            print(f"mov rax, rdx", file=out_file)
-
-
-
 
 
 class IfNode(AST):
@@ -535,7 +493,6 @@ class FunctionNode(AST):
             new_gen.memory_depth = generator.memory_depth
             new_gen.functions = generator.functions
             new_gen.label_count = generator.label_count
-            new_gen.table_list = generator.table_list
 
         print(f"{asm_func_name}:", file=out_file)
 
@@ -555,7 +512,6 @@ class FunctionNode(AST):
             print(f"ret", file=out_file)
         generator.label_count = new_gen.label_count
         generator.memory_depth = new_gen.memory_depth  # TODO optimize memory
-        generator.table_list = new_gen.table_list # TODO optimize memory
 
 
 class FunctionCall(AST):
@@ -577,7 +533,6 @@ class FunctionCall(AST):
             print(f"mov qword [fstack+{function_stack}], rax", file=out_file)
             function_stack += 8  # TODO 8 = sizeof int
         print(f"call {generator.functions[identifier]}", file=out_file)
-
 
 
 class BlockNode(AST):
@@ -624,18 +579,6 @@ class AssignNode(AST):
             print(f"mov qword {generator.variables[identifier]}, rax", file=out_file)
 
 
-class ReturnNode(AST):
-    def __init__(self, token: Token, expression: AST):
-        super().__init__(token)
-        self.expression = expression
-
-    def to_dict(self):
-        return dict(expression=self.expression.to_dict())
-
-    def generate(self, generator, out_file):
-        self.expression.generate(generator, out_file)
-        print("ret", file=out_file)
-
 class PutcNode(AST):
     def __init__(self, token: Token, expression: AST):
         super().__init__(token)
@@ -657,7 +600,6 @@ class PutcNode(AST):
         print("syscall", file=out_file)
 
 
-
 class VariableDeclarationNode(AST):
     def __init__(self, token: Token, variable: Token):
         super().__init__(token)
@@ -667,7 +609,6 @@ class VariableDeclarationNode(AST):
         return dict(variable=self.variable.to_dict())
 
     def generate(self, generator, out_file):
-        out_file = out_file
         generator.variables[self.variable.literal] = None
 
 
@@ -765,6 +706,7 @@ class TableDeclarationNode(AST):
         generator.table_list.append((self.variable.literal, self.length.literal))
         generator.variables[self.variable.literal] = f"[table_{len(generator.table_list)-1}]"
 
+
 class ConstDeclarationNode(AST):
     def __init__(self, token: Token, identifier: Token, value: Token):
         super().__init__(token)
@@ -823,7 +765,7 @@ class Parser:
 
     def parse_statement(self):
         if debug:
-            print("`"+self.tokens[self.cursor].literal+"`", self.current_token_location())
+            print(self.current_token_location())
         if self.current_token() == TokenType.IF:
             return self.parse_if()
         if self.current_token() == TokenType.WHILE:
@@ -849,8 +791,7 @@ class Parser:
             return self.parse_var_declaration()
         if self.current_token() == TokenType.CONST:
             return self.parse_const_declaration()
-        if self.current_token() == TokenType.IMPORT:
-            return self.parse_import()
+
     def parse_expr(self) -> AST:
         assert TokenType.TokenType_NUMBERS == 30
         left = self.parse_T()
@@ -897,14 +838,6 @@ class Parser:
     def parse_T(self) -> AST:
         left = self.parse_Q()
         if self.current_token() == TokenType.MULT:
-            token = self.chop_token()
-            right = self.parse_T()
-            return BinaryOperator(token, left, right)
-        if self.current_token() == TokenType.DIV:
-            token = self.chop_token()
-            right = self.parse_T()
-            return BinaryOperator(token, left, right)
-        if self.current_token() == TokenType.MOD:
             token = self.chop_token()
             right = self.parse_T()
             return BinaryOperator(token, left, right)
@@ -1063,15 +996,6 @@ class Parser:
             exit(1)
         return PutcNode(token, expression)
 
-    def parse_return(self) -> AST:
-        token = self.chop_token()
-        expression = self.parse_expr()
-        ct = self.chop_token()
-        if ct.type != TokenType.SEMICOLON:
-            print(f"{ct.location}:ERROR: missing `;`")
-            exit(1)
-        return ReturnNode(token, expression)
-
     def parse_function_call(self) -> AST:
         token = self.chop_token()
         self.chop_token()  # token (
@@ -1086,29 +1010,31 @@ class Parser:
                     close_paren = True
                 case _:
                     print(f"{self.chop_token().location}: ERROR: no comma after value in function call")
-        self.chop_token() # drop )
+                    exit(1)
+        self.chop_token()  # I don't know why, and i don't want to think about it
+        ct = self.chop_token()
+        if ct.type != TokenType.SEMICOLON:
+            print(f"{ct.location}: ERROR: missing semicolon")
+            exit(1)
         return fun_call
 
     def parse_var_declaration(self) -> AST:
         token = self.chop_token()
-        variable = self.tokens[self.cursor]
-        if self.tokens[self.cursor+1].type == TokenType.OPEN_BRACKET:
-            self.chop_token() # chop var
-            self.chop_token() # chop [ 
+        variable = self.chop_token()
+        if self.current_token() == TokenType.OPEN_BRACKET:
+            self.chop_token()
             length = self.chop_token()
-            self.chop_token() # chop ]
+            self.chop_token()
             semicolon = self.chop_token()
             if semicolon.type != TokenType.SEMICOLON:
                 print(f"{semicolon.location}: ERROR: missing semicolon")
                 exit(1)
             return TableDeclarationNode(token, variable, length)
         else:
-            next_token = self.tokens[self.cursor+1]
-            if next_token.type == TokenType.ASSIGN:
-                parse_eq = self.parse_assign()
-                return VariableDeclarationAndAssignNode(token, variable, parse_eq)
-            self.chop_token()
-            self.chop_token()
+            semicolon = self.chop_token()
+            if semicolon.type != TokenType.SEMICOLON:
+                print(f"{semicolon.location}: ERROR: missing semicolon")
+                exit(1)
             return VariableDeclarationNode(token, variable)
 
     def parse_table_access_for_assigment(self) -> AST:
@@ -1125,7 +1051,6 @@ class Parser:
                 print(f"{ct.location}:ERROR: missing `;`")
                 exit(1)
             return AssignNode(optoken, tan, expression)
-        return tan
 
     def parse_const_declaration(self):
         token = self.chop_token()
@@ -1136,37 +1061,6 @@ class Parser:
             print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
             exit(1)
         return ConstDeclarationNode(token, identifier, value)
-
-    def parse_import(self):
-        import_token = self.chop_token()
-        file = self.chop_token()
-        file_to_import = file.literal
-
-        with open(file_to_import, "r") as f:
-            file_as_string = f.read()
-
-        lexer = Lexer(file_to_import, file_as_string)
-
-        if not os.path.exists(file_to_import):
-            print(f"ERROR: {file_to_import} does not exists")
-
-        tokens = list()
-        for token in lexer:
-            tokens.append(token)
-        print("lexed")
-
-        parser = Parser(tokens)
-        statements = parser.parse()
-        print("parsed")
-
-        semicolon = self.chop_token()
-        if semicolon.type != TokenType.SEMICOLON:
-            print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
-            exit(1)
-
-        return ImportNode(token, file, statements)
-
-
 class Generator:
     def __init__(self, statements: List[AST], out_file_name="foo.asm"):
         self.out_file = None
