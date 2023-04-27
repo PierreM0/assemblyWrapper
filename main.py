@@ -89,6 +89,7 @@ class TokenType(int):
     BIT_AND = auto()
     BIT_OR = auto()
     IMPORT = auto()
+    COMMENTS = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -832,6 +833,10 @@ class Parser:
         if self.current_token() == TokenType.OPEN_CURLY_BRACKET:
             return self.parse_block()
         if self.current_token() == TokenType.IDENTIFIER:
+            if self.tokens[self.cursor + 1].type == TokenType.OPEN_PAREN:
+                funcall = self.parse_function_call()
+                self.chop_token() # drop token
+                return funcall
             if self.tokens[self.cursor + 1].type == TokenType.OPEN_BRACKET:
                 return self.parse_table_access_for_assigment()
             if self.tokens[self.cursor + 1].type == TokenType.ASSIGN:
@@ -1089,7 +1094,7 @@ class Parser:
         variable = self.tokens[self.cursor]
         if self.tokens[self.cursor+1].type == TokenType.OPEN_BRACKET:
             self.chop_token() # chop var
-            self.chop_token() # chop [
+            self.chop_token() # chop [ 
             length = self.chop_token()
             self.chop_token() # chop ]
             semicolon = self.chop_token()
