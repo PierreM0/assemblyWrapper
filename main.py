@@ -161,7 +161,7 @@ class Lexer:
 
     def __next__(self):
         global debug
-        assert TokenType.TokenType_NUMBERS == 30
+        assert TokenType.TokenType_NUMBERS == 31
         if debug:
             print(Location(self.line, self.cursor_on_line, self.input_file))
         if self.cursor >= len(self.program_string):
@@ -349,7 +349,7 @@ class BinaryOperator(AST):
         )
 
     def generate(self, generator, out_file):
-        assert TokenType.TokenType_NUMBERS == 30
+        assert TokenType.TokenType_NUMBERS == 31
         if self.token.type == TokenType.LEFT_SHIFT:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
@@ -852,7 +852,7 @@ class Parser:
         if self.current_token() == TokenType.IMPORT:
             return self.parse_import()
     def parse_expr(self) -> AST:
-        assert TokenType.TokenType_NUMBERS == 28
+        assert TokenType.TokenType_NUMBERS == 31
         left = self.parse_T()
         if self.current_token() == TokenType.MINUS:
             token = self.chop_token()
