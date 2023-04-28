@@ -89,6 +89,8 @@ class TokenType(int):
     BIT_AND = auto()
     BIT_OR = auto()
     IMPORT = auto()
+    COMMENTS = auto()
+    SYSCALL = auto()
     TokenType_NUMBERS = auto()
 
 
@@ -159,15 +161,22 @@ class Lexer:
                 self.line += 1
                 self.cursor_on_line = 1
 
+    def drop_line(self):
+        while self.chop_char() != '\n':
+            if self.cursor >= len(self.program_string):
+                raise StopIteration
+
     def __next__(self):
         global debug
-        assert TokenType.TokenType_NUMBERS == 31
+        assert TokenType.TokenType_NUMBERS == 33
         if debug:
             print(Location(self.line, self.cursor_on_line, self.input_file))
         if self.cursor >= len(self.program_string):
             raise StopIteration
         self.trim_left()
 
+        if self.program_string[self.cursor] == '/' and self.program_string[self.cursor +1] == '/':
+            self.drop_line()
         cursor = self.cursor
         location = Location(self.line, self.cursor_on_line, self.input_file)
         if self.program_string[cursor] == '"':
@@ -210,6 +219,8 @@ class Lexer:
                 type_ = TokenType.CONST
             elif literal == 'import':
                 type_ = TokenType.IMPORT
+            elif literal == 'syscall':
+                type_ = TokenType.SYSCALL
             return Token(literal, type_, location)
         elif self.program_string[self.cursor].isnumeric():
             while self.program_string[self.cursor].isalnum() or self.program_string[self.cursor] == '_':
@@ -349,7 +360,7 @@ class BinaryOperator(AST):
         )
 
     def generate(self, generator, out_file):
-        assert TokenType.TokenType_NUMBERS == 31
+        assert TokenType.TokenType_NUMBERS == 33
         if self.token.type == TokenType.LEFT_SHIFT:
             self.left.generate(generator, out_file)
             print(f"push rax", file=out_file)
@@ -577,6 +588,41 @@ class FunctionCall(AST):
             function_stack += 8  # TODO 8 = sizeof int
         print(f"call {generator.functions[identifier]}", file=out_file)
 
+class SystemCall(AST):
+    def __init__(self, token: Token, arguments: List[AST]):
+        super().__init__(token)
+        self.arguments = arguments
+
+    def to_dict(self):
+        return dict(arguments=[a.to_dict() for a in self.arguments])
+
+    def generate(self, generator, out_file):
+        # TODO make shure the syscall is legal (args == syscall number)
+        identifier = self.token.literal
+        function_stack = 0
+        for arg in self.arguments:
+            arg.generate(generator, out_file)
+            print(f"mov qword [fstack+{function_stack}], rax", file=out_file)
+            function_stack += 8  # TODO 8 = sizeof int
+        if len(self.arguments) < 1:
+            print(f"{self.token.location}: ERROR: Not enought arguments for syscall")
+        print(f"mov rax, qword [fstack]", file=out_file)
+        if len(self.arguments) > 1:
+            print(f"mov rdi, qword [fstack+8]", file=out_file)
+        if len(self.arguments) > 2:
+            print(f"mov rsi, qword [fstack+16]", file=out_file)
+        if len(self.arguments) > 3:
+            print(f"mov rdx, qword [fstack+24]", file=out_file)
+        if len(self.arguments) > 4:
+            print(f"mov r10, qword [fstack+32]", file=out_file)
+        if len(self.arguments) > 5:
+            print(f"mov r8, qword [fstack+40]", file=out_file)
+        if len(self.arguments) > 6:
+            print(f"mov r9, qword [fstack+48]", file=out_file)
+        if len(self.arguments) > 7:
+            print(f"{self.token.location}: ERROR: Too many arguments for syscall")
+
+        print(f"syscall", file=out_file)
 
 
 class BlockNode(AST):
@@ -851,8 +897,11 @@ class Parser:
             return self.parse_const_declaration()
         if self.current_token() == TokenType.IMPORT:
             return self.parse_import()
+        if self.current_token() == TokenType.SYSCALL:
+            return self.parse_syscall()
+
     def parse_expr(self) -> AST:
-        assert TokenType.TokenType_NUMBERS == 31
+        assert TokenType.TokenType_NUMBERS == 33
         left = self.parse_T()
         if self.current_token() == TokenType.MINUS:
             token = self.chop_token()
@@ -1076,7 +1125,7 @@ class Parser:
         token = self.chop_token()
         self.chop_token()  # token (
         fun_call = FunctionCall(token, list())
-        close_paren = self.current_token() == TokenType.CLOSE_PAREN
+        close_paren = (self.current_token() == TokenType.CLOSE_PAREN)
         while not close_paren:  # ( 1, 3, 4, 5);
             fun_call.arguments.append(self.parse_expr())
             match self.current_token():
@@ -1165,6 +1214,26 @@ class Parser:
             exit(1)
 
         return ImportNode(token, file, statements)
+
+    def parse_syscall(self):
+        token = self.chop_token()
+        self.chop_token()
+        system_call = SystemCall(token, list())
+        close_paren = (self.current_token() == TokenType.CLOSE_PAREN)
+        while not close_paren:  # ( 1, 3, 4, 5);
+            system_call.arguments.append(self.parse_expr())
+            match self.current_token():
+                case TokenType.COMMA:
+                    self.chop_token()
+                case TokenType.CLOSE_PAREN:
+                    close_paren = True
+                case _:
+                    print(f"{self.chop_token().location}: ERROR: no comma after value in system call")
+                    exit(1)
+        self.chop_token() # drop )
+        self.chop_token() # drop;
+        return system_call
+
 
 
 class Generator:
