@@ -1,6 +1,5 @@
 fun print_stars_spaces(i) {
-    let tab;
-    tab = [' ', '*'];
+    let tab[] = [' ', '*'];
     putc (tab[i]);
 }
 

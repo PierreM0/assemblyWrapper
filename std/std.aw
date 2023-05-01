@@ -31,7 +31,7 @@ fun print_int(integer) {
   }
 }
 
-println_int(integer) {
+fun println_int(integer) {
     print_int(integer);
     putc 10;
-  }
+ }

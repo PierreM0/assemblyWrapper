@@ -1,13 +1,13 @@
 #!/usr/bin/env python3.11
 from abc import abstractmethod
+from array import array
 import copy
 import json
 import os.path
 import subprocess
 import time
-from typing import List, Tuple, Dict, overload
+from typing import List, Tuple, Dict, final
 import sys
-from typing_extensions import override
 
 STATIC_MEMORY_SIZE = 1024 * 1024 * 8
 MAX_ARGS = 5
@@ -515,6 +515,126 @@ class WhileNode(AST):
         print(f".L{end_label}:", file=out_file)
 
 
+class Generator_NASM:
+    def __init__(self, statements: List[AST], out_file_name="foo.asm"):
+        self.out_file = None
+        self.constants: Dict[str, str]  = dict()
+        self.statements = statements
+        self.table_list: Dict[str, str] = dict()
+        self.table_length: Dict[str, TableElement] = dict()
+        self.variables: Dict[str, str]  = dict()
+        self.functions: Dict[str, str]  = dict()
+        self.out_file_name = out_file_name
+        self.memory_depth = 0
+        self.label_count = 0
+
+    def generate(self):
+        out_file = open(self.out_file_name, "w")
+        # Allocate static memory to do operations
+
+        print("BITS 64", file=out_file)
+        print("section .text", file=out_file)
+        print("    global _start", file=out_file)
+        for i, statement in enumerate(self.statements):
+            if i != 0:
+                print(f".l{i}:", file=out_file)
+            statement.generate(self, out_file)
+
+        print("; STOP", file=out_file)
+        print("mov rax, 60", file=out_file)
+        print("xor rdi, rdi", file=out_file)
+        print("syscall", file=out_file)
+
+        print("section .data", file=out_file)
+        for table in self.table_list:
+            if self.table_length[table].elements is None:
+                print(f"{self.table_list[table].removeprefix('[').removesuffix(']')} times {self.table_length[table].length} * 8 {self.table_length[table].data_length} 0", file=out_file)
+
+            else:
+                print(f"{self.table_list[table].removeprefix('[').removesuffix(']')} {self.table_length[table].data_length} ", end="", file=out_file)
+                assert(self.table_length[table].elements is not None)
+                for idx, data in enumerate(self.table_length[table].elements):
+                    if idx != 0:
+                        print(",", end="", file=out_file)
+                    print(data, end="", file=out_file)
+                print("", file=out_file)
+        print(f"fstack times {8 << MAX_ARGS} db 0", file=out_file)
+        print(f"mem times {STATIC_MEMORY_SIZE} db 0", file=out_file)
+        out_file.close()
+
+    def deepcopy(self):
+        statements = copy.deepcopy(self.statements)
+        out_file_name = copy.deepcopy(self.out_file_name)
+
+        gen = Generator_NASM(statements, out_file_name)
+        gen.functions = copy.deepcopy(self.functions)
+        gen.memory_depth = copy.deepcopy(self.memory_depth)
+        gen.label_count = copy.deepcopy(self.label_count)
+
+        return gen
+
+
+
+
+class Generator_FASM:
+    def __init__(self, statements: List[AST], out_file_name="foo.asm"):
+        self.out_file = None
+        self.constants: Dict[str, str]  = dict()
+        self.statements = statements
+        self.table_list: Dict[str, str] = dict()
+        self.table_length: Dict[str, TableElement] = dict()
+        self.variables: Dict[str, str]  = dict()
+        self.functions: Dict[str, str]  = dict()
+        self.out_file_name = out_file_name
+        self.memory_depth = 0
+        self.label_count = 0
+
+    def generate(self):
+        out_file = open(self.out_file_name, "w")
+        # Allocate static memory to do operations
+
+        print("format ELF64 executable", file=out_file)
+        print("segment readable executable", file=out_file)
+        print("    entry start", file=out_file)
+        for i, statement in enumerate(self.statements):
+            statement.generate(self, out_file)
+
+        print("; STOP", file=out_file)
+        print("mov rax, 60", file=out_file)
+        print("xor rdi, rdi", file=out_file)
+        print("syscall", file=out_file)
+
+        print("segment readable writable", file=out_file)
+
+
+        for table in self.table_list:
+            if self.table_length[table].elements is None:
+                print(f"{self.table_list[table].removeprefix('[').removesuffix(']')} {self.table_length[table].data_length} {self.table_length[table].length} * 8  dup(0)", file=out_file)
+            else:
+                print(f"{self.table_list[table].removeprefix('[').removesuffix(']')} {self.table_length[table].data_length} ", end="", file=out_file)
+                assert(self.table_length[table].elements is not None)
+                for idx, data in enumerate(self.table_length[table].elements):
+                    if idx != 0:
+                        print(",", end="", file=out_file)
+                    print(data, end="", file=out_file)
+                print("", file=out_file)
+        print(f"fstack rb {8 << MAX_ARGS}", file=out_file)
+        print(f"mem rb {STATIC_MEMORY_SIZE}", file=out_file)
+        out_file.close()
+
+    def deepcopy(self):
+        statements = copy.deepcopy(self.statements)
+        out_file_name = copy.deepcopy(self.out_file_name)
+
+        gen = Generator_FASM(statements, out_file_name)
+        gen.functions = copy.deepcopy(self.functions)
+        gen.memory_depth = copy.deepcopy(self.memory_depth)
+        gen.label_count = copy.deepcopy(self.label_count)
+
+        return gen
+
+
+
 class FunctionNode(AST):
     def __init__(self, token: Token, arguments: List[Token],
                  body: AST, name: Token):
@@ -535,17 +655,24 @@ class FunctionNode(AST):
             print(f"{self.token.location}: ERROR: this token already exists. This is a variable.")
         asm_func_name = f"FUNC_{function_name}"
         if function_name == 'main':
-            asm_func_name = "start"
+            if debug: 
+                asm_func_name = "_start"
+            else:
+                asm_func_name = "start"
         generator.functions[function_name] = asm_func_name
 
         new_gen = generator
 
         if function_name != 'main':
-            new_gen = Generator(generator.statements)
+            if debug:
+                new_gen = Generator_NASM(generator.statements)
+            else:
+                new_gen = Generator_FASM(generator.statements)
             new_gen.memory_depth = generator.memory_depth
             new_gen.functions = generator.functions
             new_gen.label_count = generator.label_count
             new_gen.table_list = generator.table_list
+            new_gen.table_length = generator.table_length
 
         print(f"{asm_func_name}:", file=out_file)
 
@@ -557,7 +684,7 @@ class FunctionNode(AST):
             print(f"mov r10, qword [fstack+{function_stack}]", file=out_file)
             print(f"mov qword {new_gen.variables[identifier]}, r10", file=out_file)
 
-            new_gen.memory_depth += 8
+            new_gen.memory_deptength= 8
             function_stack += 8
 
         self.body.generate(new_gen, out_file)
@@ -566,6 +693,7 @@ class FunctionNode(AST):
         generator.label_count = new_gen.label_count
         generator.memory_depth = new_gen.memory_depth  # TODO optimize memory
         generator.table_list = new_gen.table_list # TODO optimize memory
+        generator.table_length = new_gen.table_length # TODO optimize memory
 
 
 class FunctionCall(AST):
@@ -598,7 +726,6 @@ class SystemCall(AST):
 
     def generate(self, generator, out_file):
         # TODO make shure the syscall is legal (args == syscall number)
-        identifier = self.token.literal
         function_stack = 0
         for arg in self.arguments:
             arg.generate(generator, out_file)
@@ -653,12 +780,16 @@ class AssignNode(AST):
         if identifier in generator.functions:
             print(f"{self.token.location}: ERROR: cannot assign to a function.")
             exit(1)
-        if identifier not in generator.variables:
+        if identifier in generator.variables:
+            if generator.variables[identifier] is None:
+                generator.variables[identifier] = f"[mem+{generator.memory_depth}]"
+                generator.memory_depth += 8
+            var_to_print = generator.variables[identifier]
+        elif identifier in generator.table_list:
+            var_to_print = None 
+        else:
             print(f"{self.token.location}: ERROR: unknown word `{identifier}`.")
             exit(1)
-        if generator.variables[identifier] is None:
-            generator.variables[identifier] = f"[mem+{generator.memory_depth}]"
-            generator.memory_depth += 8
         print(f"; ASSIGN", file=out_file)
         if isinstance(self.variable, TableAccessNode):
             print("push rax", file=out_file)
@@ -666,7 +797,7 @@ class AssignNode(AST):
             print("pop rax ", file=out_file)
             print("mov qword [rbx], rax", file=out_file)
         else:
-            print(f"mov qword {generator.variables[identifier]}, rax", file=out_file)
+            print(f"mov qword {var_to_print}, rax", file=out_file)
 
 
 class ReturnNode(AST):
@@ -743,6 +874,10 @@ class IdentifierNode(AST):
             print(f"mov rax, {generator.constants[self.token.literal]}", file=out_file)
             return
         if identifier not in generator.variables and identifier not in generator.functions:
+            for idx, table in enumerate(generator.table_list):
+                if table == identifier:
+                    print(f"mov rax, qword table_{idx}", file=out_file)
+                    return
             print(f"{self.token.location}: ERROR: identifier `{identifier}` is not declared")
             exit(1)
         if generator.variables[identifier] is None:
@@ -762,35 +897,36 @@ class TableAccessNode(AST):
 
     def generate(self, generator, out_file):
         identifier = self.token.literal
-        if identifier not in generator.variables and identifier not in generator.functions:
-            print(f"{self.token.location}: ERROR: identifier `{identifier}` is not declared")
-            exit(1)
-        if generator.variables[identifier] is None:
-            print(f"{self.token.location}: ERROR: identifier `{identifier}` is not assigned")
+        if identifier not in generator.table_list:
+            print(f"{self.token.location}: ERROR: the identifier is not initialized")
             exit(1)
         self.index.generate(generator, out_file)
-        if generator.variables[identifier].startswith("[mem+"):
-            var_index = generator.variables[identifier][len("[mem+"):-len("]")]
-            mem = "mem+"
-            var = mem + var_index
-            print(f"mov r10, qword [{var}]", file=out_file)
-        elif generator.variables[identifier].startswith("[table_"):
-            mem = generator.variables[identifier]
-            var = mem.removeprefix('[').removesuffix(']')
-            print(f"lea r10, qword [{var}]", file=out_file)
-        elif generator.variables[identifier].startswith("[fstack+"):
-            print("COMPILER ERROR, FSTACK IS BEING USED ")
-        else:
-            print("COMPILER ERROR, UNREACHABLE")
-            exit(1)
-        sizeof_var = 8  # TODO  sizeof VAR at compile time (when adding struct ?)
+        mem_variable = generator.table_list[identifier]
+        string = False
+        mem = generator.table_list[identifier]
+        var = mem.removeprefix('[').removesuffix(']')
+        print(f"lea r10, qword [{var}]", file=out_file)
+        string = True
+        sizeof_var = generator.table_length[identifier].data_length_int  # TODO  sizeof VAR at compile time (when adding struct ?)
         # rax is the index
         print(f"mov rcx, {sizeof_var}", file=out_file)
         print("mul rcx", file=out_file)
         print("add rax, r10", file=out_file)
         print(f"mov rbx, rax", file=out_file)
-        print(f"mov rax, qword [rbx]", file=out_file)
+        if string:
+            print(f"mov al, [rbx]", file=out_file)
+            print(f"movzx rax, al", file=out_file)
+        else:
+            print(f"mov rax, qword [rbx]", file=out_file)
 
+
+class TableElement:
+    def __init__(self, length: int, data_length: str, data_length_int: int, elements: List[str] | None):
+        self.length = length
+        self.data_length = data_length
+        self.data_length_int = data_length_int
+        self.elements = elements
+        
 
 class TableDeclarationNode(AST):
     def __init__(self, token: Token, variable: Token, length: Token):
@@ -807,9 +943,71 @@ class TableDeclarationNode(AST):
             exit(1)
         if self.length.literal in generator.constants:
             self.length.literal = generator.constants[self.length.literal]
-        generator.table_list.append((self.variable.literal, self.length.literal))
-        generator.variables[self.variable.literal] = f"[table_{len(generator.table_list)-1}]"
+        generator.table_list[self.variable.literal] = f"[table_{len(generator.table_list)}]"
+        generator.table_length[self.variable.literal] = TableElement(
+                self.length.literal, "dq", 8, None)
 
+class ArrayNode(AST):
+    def __init__(self, token: Token, array: List[Token]):
+        super().__init__(token)
+        self.array = array
+        self.size = 0
+
+    def add(self, item):
+        self.array.append(item)
+        self.size += 1
+    
+    def to_dict(self):
+        return dict(array=[t.to_dict() for t in self.array])
+
+    def generate(self, generator, out_file):
+        global strings
+        global string_length
+        first_raw = generator.memory_depth
+        print(f"; ARRAYNODE", file=out_file)
+        if self.token.type == TokenType.STRING:
+            strings.append([ord_ for ord_ in self.array])
+            print(f"lea rax, [string_{string_length}]", file=out_file)
+            string_length += 1
+        else:
+            for i in range(len(self.array)):
+                print(f"mov qword [mem+{generator.memory_depth}], {self.array[i].literal}",
+                      file=out_file)
+                generator.memory_depth += 8
+            print(f"lea rax, qword [mem+{first_raw}]", file=out_file)
+
+class DirectTableDeclarationNode(AST):
+    def __init__(self, token: Token, variable: Token, array_node: ArrayNode):
+        super().__init__(token)
+        self.variable = variable
+        self.array_node = array_node
+    
+    def to_dict(self):
+        return dict(variable=self.variable.to_dict(), array=self.array_node.to_dict())
+
+    def generate(self, generator, out_file):
+        
+        if self.array_node.token.type != TokenType.STRING:
+            generator.table_list[self.variable.literal] = f"[table_{len(generator.table_list)}]"
+            generator.table_length[self.variable.literal] = TableElement(
+                    len(self.array_node.array),
+                    "dq",
+                    8,
+                    [ide.literal for ide in self.array_node.array]
+            )
+            var_to_print = generator.table_list[self.variable.literal]
+        else:
+            generator.table_list[self.variable.literal] = f"[table_{len(generator.table_list)}]"
+            generator.table_length[self.variable.literal] = TableElement(
+                    len(self.array_node.array),
+                    "db",
+                    1,
+                    [char.literal for char in self.array_node.array],
+            )
+            var_to_print = generator.table_list[self.variable.literal] 
+        print(f"lea rax, qword {var_to_print}", file=out_file)
+        
+        
 
 class ConstDeclarationNode(AST):
     def __init__(self, token: Token, identifier: Token, value: Token):
@@ -847,7 +1045,7 @@ class ImportNode(AST):
         self.statements = statements
 
     def to_dict(self):
-        return dict(file=file.to_dict(), statements=[s.to_dict() for s in statements])
+        return dict(file=self.file.to_dict(), statements=[s.to_dict() for s in self.statements])
 
     def generate(self, generator, out_file):
         for stmt in self.statements:
@@ -898,7 +1096,10 @@ class Parser:
         if self.current_token() == TokenType.IMPORT:
             return self.parse_import()
         if self.current_token() == TokenType.SYSCALL:
-            return self.parse_syscall()
+            ast = self.parse_syscall()
+            self.chop_token()
+            return ast
+
 
     def parse_expr(self) -> AST:
         assert TokenType.TokenType_NUMBERS == 33
@@ -987,6 +1188,8 @@ class Parser:
                 return TableAccessNode(token, index)
             else:
                 return IdentifierNode(self.chop_token())
+        elif self.current_token() == TokenType.SYSCALL:
+            return self.parse_syscall()
         elif self.current_token() == TokenType.OPEN_BRACKET:
             chopped_token = self.chop_token()  # [
             node = ArrayNode(chopped_token, list())
@@ -1098,6 +1301,8 @@ class Parser:
         token = self.chop_token()
         expression = self.parse_expr()
         ct = self.chop_token()
+        if isinstance(expression, ArrayNode):
+            print(f"{ct.location}: ERROR: cannot assign array to a variable")
         if ct.type != TokenType.SEMICOLON:
             print(f"{ct.location}:ERROR: missing `;`")
             exit(1)
@@ -1145,7 +1350,18 @@ class Parser:
             self.chop_token() # chop var
             self.chop_token() # chop [ 
             length = self.chop_token()
-            self.chop_token() # chop ]
+            if length.type == TokenType.CLOSE_BRACKET:
+                if self.current_token() == TokenType.ASSIGN:
+                    self.chop_token() # consume = 
+                    expression = self.parse_expr()
+                    if isinstance(expression, ArrayNode):
+                        self.chop_token() # drop ;
+                        return DirectTableDeclarationNode(token, variable, expression)
+                    print(f"{expression.token.location}: Error expected an array, but got `{expression.token.literal}`")
+                else:
+                    print(f"{length.location}: Error expected assignment, but got `{length.literal}`")
+            else:
+                self.chop_token() # chop ]
             semicolon = self.chop_token()
             if semicolon.type != TokenType.SEMICOLON:
                 print(f"{semicolon.location}: ERROR: missing semicolon")
@@ -1213,7 +1429,7 @@ class Parser:
             print(f"{semicolon.location}: ERROR: expected semicolon but got `{semicolon.literal}`")
             exit(1)
 
-        return ImportNode(token, file, statements)
+        return ImportNode(import_token, file, statements)
 
     def parse_syscall(self):
         token = self.chop_token()
@@ -1231,95 +1447,7 @@ class Parser:
                     print(f"{self.chop_token().location}: ERROR: no comma after value in system call")
                     exit(1)
         self.chop_token() # drop )
-        self.chop_token() # drop;
         return system_call
-
-
-
-class Generator:
-    def __init__(self, statements: List[AST], out_file_name="foo.asm"):
-        self.out_file = None
-        self.constants: Dict[str, str] = dict()
-        self.statements = statements
-        self.table_list: List[str] = list()
-        self.variables: Dict[str, str] = dict()
-        self.functions: Dict[str, str] = dict()
-        self.out_file_name = out_file_name
-        self.memory_depth = 0
-        self.label_count = 0
-
-    def generate(self):
-        out_file = open(self.out_file_name, "w")
-        # Allocate static memory to do operations
-
-        print("format ELF64 executable", file=out_file)
-        print("segment readable executable", file=out_file)
-        print("    entry start", file=out_file)
-        for i, statement in enumerate(self.statements):
-            if i != 0:
-                print(f".l{i}:", file=out_file)
-            statement.generate(self, out_file)
-
-        print("; STOP", file=out_file)
-        print("mov rax, 60", file=out_file)
-        print("xor rdi, rdi", file=out_file)
-        print("syscall", file=out_file)
-
-        print("segment readable writable", file=out_file)
-
-        for n, (_, length) in enumerate(self.table_list):
-            print(f"table_{n} db {length} * 8 dup(0)", file=out_file)
-        for n, string in enumerate(strings):
-            print(f"string_{n} dq ", end="", file=out_file)
-            for i, token in enumerate(string):
-                char = token.literal
-                if i != 0:
-                    print(",", end="", file=out_file)
-                print(f"{char}", end="", file=out_file)
-            print(f"", file=out_file)
-        print(f"fstack rb {8 << MAX_ARGS}", file=out_file)
-        print(f"mem rb {STATIC_MEMORY_SIZE}", file=out_file)
-        out_file.close()
-
-    def deepcopy(self):
-        statements = copy.deepcopy(self.statements)
-        out_file_name = copy.deepcopy(self.out_file_name)
-
-        gen = Generator(statements, out_file_name)
-        gen.functions = copy.deepcopy(self.functions)
-        gen.memory_depth = copy.deepcopy(self.memory_depth)
-        gen.label_count = copy.deepcopy(self.label_count)
-
-        return gen
-
-
-class ArrayNode(AST):
-    def __init__(self, token: Token, array: List[Token]):
-        super().__init__(token)
-        self.array = array
-        self.size = 0
-
-    def add(self, item):
-        self.array.append(item)
-        self.size += 1
-
-    def generate(self, generator, out_file):
-        global strings
-        global string_length
-        first_raw = generator.memory_depth
-        print(f"; ARRAYNODE", file=out_file)
-        if self.token.type == TokenType.STRING:
-            strings.append([ord_ for ord_ in self.array])
-            print(f"lea rax, [string_{string_length}]", file=out_file)
-            string_length += 1
-        else:
-            for i in range(len(self.array)):
-                print(f"mov qword [mem+{generator.memory_depth}], {self.array[i].literal}",
-                      file=out_file)
-                generator.memory_depth += 8
-            print(f"lea rax, qword [mem+{first_raw}]", file=out_file)
-
-
 def run_info(command: List[str]) -> None:
     if info_cmd:
         print(f"[INFO] {' '.join(command)}")
@@ -1329,6 +1457,7 @@ def run_info(command: List[str]) -> None:
 def print_info(string: str):
     if info:
         print(f"[INFO] {string}")
+
 
 
 def main() -> None:
@@ -1366,15 +1495,22 @@ def main() -> None:
 
     begin = time.time()
     asm_file = output_file + ".asm"
-    generator = Generator(statements, asm_file)
+    if debug:
+        generator = Generator_NASM(statements, asm_file)
+    else:
+        generator = Generator_FASM(statements, asm_file)
     generator.generate()
     end = time.time()
     print_info(f"generation took {end - begin} seconds")
 
-    fasm_run = subprocess.run([fasm_loc, asm_file])
-    if fasm_run.returncode > 0:
-        exit(1)
-    run_info(["chmod", "+x", output_file])
+    if debug:
+        subprocess.run(["yasm", "-felf64", "-gdwarf2", asm_file, "-o", output_file+".o"])
+        subprocess.run(["ld", output_file+".o", "-o", output_file])
+    else:
+        fasm_run = subprocess.run([fasm_loc, asm_file])
+        if fasm_run.returncode > 0:
+            exit(1)
+        run_info(["chmod", "+x", output_file])
 
 
 if __name__ == '__main__':

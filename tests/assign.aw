@@ -19,8 +19,7 @@ fun test_assign_char() {
 }
 
 fun test_assign_string() {
-    let str;
-    str = "HELLO";
+    let str[] = "HELLO";
     if (str[0] != 'H') putc '3';
     if (str[1] != 'E') putc '3';
     if (str[2] != 'L') putc '3';
@@ -29,8 +28,7 @@ fun test_assign_string() {
 }
 
 fun test_assign_tab() {
-    let tab;
-    tab = [0, 1, 2];
+    let tab[] = [0, 1, 2];
     if (tab[0] != 0) putc '4';
     if (tab[1] != 1) putc '4';
     if (tab[2] != 2) putc '4';
